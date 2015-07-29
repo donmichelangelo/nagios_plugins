@@ -1,0 +1,154 @@
+#!/bin/sh
+###############################################
+#
+# Nagios script to check Postfix mail queue status
+#
+# Copyright 2010, based on the script check_eximailqueue by 2008 Ian Yates
+#
+# NOTE: Depending on your config, the nagios user will probably be 
+#       needed to be added to the postfix group for this script to function correctly
+# 
+# See usage for command line switches
+# 
+# Created: 2010-03-03 (apps@tech-island.com)
+# Updated: 2015-07-29 (michael@michaelseevogel.de)
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# 
+###############################################
+
+NAGIOS_PATHS=(/usr/libexec/nagios/plugins /usr/local/nagios/libexec /usr/lib/nagios/plugins /usr/lib64/nagios/plugins)
+
+for NAGIOS_FOLDER in ${NAGIOS_PATHS[@]}
+do
+	if [ -f $NAGIOS_FOLDER/utils.sh ]
+	then
+		. $NAGIOS_FOLDER/utils.sh
+		break
+	fi
+done
+
+
+VERSION="1.1"
+
+POSTQUEUE=`which postqueue`
+
+FLAG_VERBOSE=FALSE
+LEVEL_WARN=""
+LEVEL_CRIT=""
+RESULT=""
+INSTANCE=""
+EXIT_STATUS=$STATE_OK
+
+
+###############################################
+#
+## FUNCTIONS 
+#
+
+## Print usage
+usage() {
+	echo " check_postfixmailqueue $VERSION - Nagios Postfix  mail queue check script"
+	echo ""
+	echo " Usage: check_postfixmailqueue -w <warning queue size> -c <critical queue size> [ -i ] <optionally check Postmulti Instance> [ -v ] [ -h ]"
+	echo ""
+	echo "		 -w  Queue size at which a warning is triggered"
+	echo "		 -c  Queue size at which a critical is triggered"
+        echo "		 -i  Check the mailqueue of a Postmulti Instance"
+	echo "		 -v  Verbose output (ignored for now)"
+	echo "		 -h  Show this page"
+	echo ""
+}
+ 
+## Process command line options
+doopts() {
+	if ( `test 0 -lt $#` )
+	then
+		while getopts w:c:i:vh myarg "$@"
+		do
+			case $myarg in
+				h|\?)
+					usage
+					exit;;
+				w)
+					LEVEL_WARN=$OPTARG;;
+				c)
+					LEVEL_CRIT=$OPTARG;;
+                                i)
+                                        INSTANCE=$OPTARG;;
+				v)
+					FLAG_VERBOSE=TRUE;;
+				*)	# Default
+					usage
+					exit;;
+			esac
+		done
+	else
+		usage
+		exit
+	fi
+}
+
+
+# Write output and return result
+theend() {
+	echo $RESULT
+	exit $EXIT_STATUS
+}
+
+
+#
+## END FUNCTIONS 
+#
+
+#############################################
+#
+## MAIN 
+#
+
+
+# Handle command line options
+doopts $@
+
+# Do the do
+if [[ $INSTANCE == "" ]]
+then
+	OUTPUT=`$POSTQUEUE -p |grep -e "^[A-Z,0-9]" | grep -v "Mail" |wc -l`
+else
+	OUTPUT=`postmulti -i $INSTANCE -x $POSTQUEUE -p |grep -e "^[A-Z,0-9]" | grep -v "Mail" |wc -l`
+fi
+
+
+if test -z "$OUTPUT" ; then
+	RESULT="Mailqueue WARNING - query returned no output!"
+	EXIT_STATUS=$STATE_WARNING
+else
+	if test "$OUTPUT" -lt "$LEVEL_WARN" ; then
+		RESULT="OK mailq $INSTANCE ($OUTPUT) is below threshold ($LEVEL_WARN/$LEVEL_CRIT)"
+		EXIT_STATUS=$STATE_OK
+	else
+		if test "$OUTPUT" -ge "$LEVEL_CRIT" ; then 
+			RESULT="CRITICAL: mailq $INSTANCE is $OUTPUT (threshold c = $LEVEL_CRIT)"
+			EXIT_STATUS=$STATE_CRITICAL
+		else
+			if test "$OUTPUT" -ge "$LEVEL_WARN" ; then 
+				RESULT="WARNING: mailq $INSTANCE is $OUTPUT (threshold w = $LEVEL_WARN)"
+				EXIT_STATUS=$STATE_WARNING
+			fi
+		fi
+	fi
+fi
+
+# Quit and return information and exit status
+theend

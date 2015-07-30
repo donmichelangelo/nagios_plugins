@@ -149,9 +149,9 @@ doopts $@
 if [[ $PROTOCOL == "" ]]
 then
 	PROTOCOL="pop3/imap"
-	OUTPUT=`sudo $DOVEADMBIN -h who | grep -o "imap\|pop3" | wc -l`
+	OUTPUT=`sudo $DOVEADMBIN -h who | awk ' { print $3 } ' | grep -o "imap\|pop3" | wc -l`
 else
-	OUTPUT=`sudo $DOVEADMBIN -h who | grep -o $PROTOCOL | wc -l`
+	OUTPUT=`sudo $DOVEADMBIN -h who | awk ' { print $3 } ' | grep -o $PROTOCOL | wc -l`
 fi
 
 

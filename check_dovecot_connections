@@ -1,0 +1,173 @@
+#!/bin/bash
+###############################################
+#
+# Dovecot/Nagios script to check the amount of connected users to Dovecot
+#
+#
+# NOTE: Depending on your config, the nagios user will probably be 
+#       needed to be added to the dovecot group for this script to function correctly
+#
+#       Why is Dovecot 2.2.16 required?
+#       It's simple and not essentially important but in versions older than 2.2.16 the "-h" parameter
+#       is missing. Of course you can remove the Dovecot 2.2.16 check and the -h parameter from the
+#       doveadm execution but then you will probably have an annoying doveadm headerline in your Nagios messages
+#
+#       Example: username                                    # proto (pids)                                       (ips)                                                                                                                      
+#	OK Dovecot pop3/imap connections (46) are below the threshold (50/100)
+#
+# 
+# See usage for command line switches
+# 
+# Created: 2015-07-30 (michael@michaelseevogel.de)
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# 
+###############################################
+
+NAGIOS_PATHS=(/usr/libexec/nagios/plugins /usr/local/nagios/libexec /usr/lib/nagios/plugins /usr/lib64/nagios/plugins)
+
+for NAGIOS_FOLDER in ${NAGIOS_PATHS[@]}
+do
+	if [ -f $NAGIOS_FOLDER/utils.sh ]
+	then
+		. $NAGIOS_FOLDER/utils.sh
+		break
+	fi
+done
+
+
+VERSION="1.0"
+
+DOVEADMBIN=`which doveadm`
+DOVECOTBIN=`which dovecot`
+
+DOVECOT_VERSION=`$DOVECOTBIN --version`
+STRIPPED_VERSION=$(echo ${DOVECOT_VERSION//.})
+
+if [ "$STRIPPED_VERSION" -le "2216" ]
+then
+	echo "Your Dovecot version is too old"
+	echo "Dovecot should be at least at version 2.2.16"
+	exit 1
+fi
+
+FLAG_VERBOSE=FALSE
+LEVEL_WARN=""
+LEVEL_CRIT=""
+RESULT=""
+PROTOCOL=""
+EXIT_STATUS=$STATE_OK
+
+
+###############################################
+#
+## FUNCTIONS 
+#
+
+## Print usage
+usage() {
+	echo " check_dovecot_connections $VERSION - Nagios Dovecot connected users query script"
+	echo ""
+	echo " Usage: check_dovecot_connections -w <warning queue size> -c <critical queue size> [ -v ] [ -h ]"
+	echo ""
+	echo "		 -w  Threshold at which a warning status should be triggered"
+	echo "		 -c  Threshold at which a critical status should be triggered"
+        echo "		 -p  Defines the protocol type to look for - valid options: pop3 or imap"
+	echo "		 -v  Verbose output (ignored for now)"
+	echo "		 -h  Show this page"
+	echo ""
+}
+ 
+## Process command line options
+doopts() {
+	if ( `test 0 -lt $#` )
+	then
+		while getopts w:c:p:vh myarg "$@"
+		do
+			case $myarg in
+				h|\?)
+					usage
+					exit;;
+				w)
+					LEVEL_WARN=$OPTARG;;
+				c)
+					LEVEL_CRIT=$OPTARG;;
+                                p)
+                                        PROTOCOL=$OPTARG;;
+				v)
+					FLAG_VERBOSE=TRUE;;
+				*)	# Default
+					usage
+					exit;;
+			esac
+		done
+	else
+		usage
+		exit
+	fi
+}
+
+
+# Write output and return result
+theend() {
+	echo $RESULT
+	exit $EXIT_STATUS
+}
+
+
+#
+## END FUNCTIONS 
+#
+
+#############################################
+#
+## MAIN 
+#
+
+
+# Handle command line options
+doopts $@
+
+# Do the do
+if [[ $PROTOCOL == "" ]]
+then
+	PROTOCOL="pop3/imap"
+	OUTPUT=`$DOVEADMBIN -h who | grep -o "imap\|pop3" | wc -l`
+else
+	OUTPUT=`$DOVEADMBIN -h who | grep -o $PROTOCOL | wc -l`
+fi
+
+
+if test -z "$OUTPUT" ; then
+	RESULT="doveadm did not returned some output!"
+	EXIT_STATUS=$STATE_WARNING
+else
+	if test "$OUTPUT" -lt "$LEVEL_WARN" ; then
+		RESULT="OK Dovecot $PROTOCOL connections ($OUTPUT) are below the threshold ($LEVEL_WARN/$LEVEL_CRIT)"
+		EXIT_STATUS=$STATE_OK
+	else
+		if test "$OUTPUT" -ge "$LEVEL_CRIT" ; then 
+			RESULT="CRITICAL: Dovecot $PROTOCOL connections ($OUTPUT) are over the critical threshold (threshold c = $LEVEL_CRIT)"
+			EXIT_STATUS=$STATE_CRITICAL
+		else
+			if test "$OUTPUT" -ge "$LEVEL_WARN" ; then 
+				RESULT="WARNING: Dovecot $PROTOCOL connections ($OUTPUT) are over the warning threshold (threshold w = $LEVEL_WARN)"
+				EXIT_STATUS=$STATE_WARNING
+			fi
+		fi
+	fi
+fi
+
+# Quit and return information and exit status
+theend

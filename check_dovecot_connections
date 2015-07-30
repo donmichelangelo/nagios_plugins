@@ -5,14 +5,20 @@
 #
 #
 # NOTE: Depending on your config, the nagios user will probably be 
-#       needed to be added to the dovecot group for this script to function correctly
+#       needed to be added to your sudoers so that this script can access doveadm, otherwise this check won't function.
+#
+#
+#	Example (edit with visudo):
+#       nrpe ALL=(root) NOPASSWD: /usr/bin/doveadm
+#
 #
 #       Why is Dovecot 2.2.16 required?
 #       It's simple and not essentially important but in versions older than 2.2.16 the "-h" parameter
 #       is missing. Of course you can remove the Dovecot 2.2.16 check and the -h parameter from the
 #       doveadm execution but then you will probably have an annoying doveadm headerline in your Nagios messages
 #
-#       Example: username                                    # proto (pids)                                       (ips)                                                                                                                      
+#       Example:
+#	username                                    # proto (pids)                                       (ips)                                                                                                                      
 #	OK Dovecot pop3/imap connections (46) are below the threshold (50/100)
 #
 # 
@@ -58,7 +64,7 @@ STRIPPED_VERSION=$(echo ${DOVECOT_VERSION//.})
 if [ "$STRIPPED_VERSION" -le "2216" ]
 then
 	echo "Your Dovecot version is too old"
-	echo "Dovecot should be at least at version 2.2.16"
+	echo "Dovecot should be at least version 2.2.16 or newer"
 	exit 1
 fi
 
@@ -143,14 +149,14 @@ doopts $@
 if [[ $PROTOCOL == "" ]]
 then
 	PROTOCOL="pop3/imap"
-	OUTPUT=`$DOVEADMBIN -h who | grep -o "imap\|pop3" | wc -l`
+	OUTPUT=`sudo $DOVEADMBIN -h who | grep -o "imap\|pop3" | wc -l`
 else
-	OUTPUT=`$DOVEADMBIN -h who | grep -o $PROTOCOL | wc -l`
+	OUTPUT=`sudo $DOVEADMBIN -h who | grep -o $PROTOCOL | wc -l`
 fi
 
 
 if test -z "$OUTPUT" ; then
-	RESULT="doveadm did not returned some output!"
+	RESULT="doveadm did not return any output!"
 	EXIT_STATUS=$STATE_WARNING
 else
 	if test "$OUTPUT" -lt "$LEVEL_WARN" ; then

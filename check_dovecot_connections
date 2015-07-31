@@ -15,7 +15,7 @@
 #       Why is Dovecot 2.2.16 required?
 #       It's simple and not essentially important but in versions older than 2.2.16 the "-h" parameter
 #       is missing. Of course you can remove the Dovecot 2.2.16 check and the -h parameter from the
-#       doveadm execution but then you will probably have an annoying doveadm headerline in your Nagios messages
+#       doveadm execution but then you will probably have an annoying doveadm headerline in your Nagios messages left (untested)
 #
 #       Example:
 #	username                                    # proto (pids)                                       (ips)                                                                                                                      
@@ -72,7 +72,10 @@ FLAG_VERBOSE=FALSE
 LEVEL_WARN=""
 LEVEL_CRIT=""
 RESULT=""
-PROTOCOL=""
+PROTO=""
+SHOW_TCP=""
+CHECK_CONNS=0
+CONNS=0
 EXIT_STATUS=$STATE_OK
 
 
@@ -85,11 +88,12 @@ EXIT_STATUS=$STATE_OK
 usage() {
 	echo " check_dovecot_connections $VERSION - Nagios Dovecot connected users query script"
 	echo ""
-	echo " Usage: check_dovecot_connections -w <warning queue size> -c <critical queue size> [ -v ] [ -h ]"
+	echo " Usage: check_dovecot_connections -w <warning queue size> -c <critical queue size> [ -p ] [ -v ] [ -h ]"
 	echo ""
 	echo "		 -w  Threshold at which a warning status should be triggered"
 	echo "		 -c  Threshold at which a critical status should be triggered"
-        echo "		 -p  Defines the protocol type to look for - valid options: pop3 or imap"
+        echo "		 -p  Defines the protocol type to look for - valid options: pop3 or imap (this is an optional switch)"
+	echo "		 -t  If this switch is set check_dovecot_connections will calculate the amount of tcp connections per connected user."
 	echo "		 -v  Verbose output (ignored for now)"
 	echo "		 -h  Show this page"
 	echo ""
@@ -99,7 +103,7 @@ usage() {
 doopts() {
 	if ( `test 0 -lt $#` )
 	then
-		while getopts w:c:p:vh myarg "$@"
+		while getopts w:c:p:tvh myarg "$@"
 		do
 			case $myarg in
 				h|\?)
@@ -110,7 +114,10 @@ doopts() {
 				c)
 					LEVEL_CRIT=$OPTARG;;
                                 p)
-                                        PROTOCOL=$OPTARG;;
+                                        PROTO=$OPTARG;;
+                                t)
+					SHOW_TCP=tcp
+					CHECK_CONNS=1;;
 				v)
 					FLAG_VERBOSE=TRUE;;
 				*)	# Default
@@ -146,13 +153,41 @@ theend() {
 doopts $@
 
 # Do the do
-if [[ $PROTOCOL == "" ]]
+
+
+
+if [[ $PROTO == "" ]] && [ $CHECK_CONNS = 0 ]
 then
-	PROTOCOL="pop3/imap"
+        PROTO="pop3/imap"
 	OUTPUT=`sudo $DOVEADMBIN -h who | awk ' { print $3 } ' | grep -o "imap\|pop3" | wc -l`
-else
-	OUTPUT=`sudo $DOVEADMBIN -h who | awk ' { print $3 } ' | grep -o $PROTOCOL | wc -l`
+
+elif [[ $PROTO != "" ]] && [ $CHECK_CONNS = 0 ]
+then
+
+	OUTPUT=`sudo $DOVEADMBIN -h who | awk ' { print $3 } ' | grep -o $PROTO | wc -l`
+
+elif [[ $PROTO == "" ]] && [ $CHECK_CONNS = 1 ]
+then
+
+	for CONNS in $(sudo $DOVEADMBIN -h who | awk ' { print $2 } ')
+	do
+		OUTPUT=$((OUTPUT+$CONNS))
+	done
+
+elif [[ $PROTO != "" ]] && [ $CHECK_CONNS = 1 ]
+then
+
+	for CONNS in $(sudo $DOVEADMBIN -h who | awk -v PROTO=$PROTO ' { if ($3 == PROTO) print $2 } ')
+	do
+		OUTPUT=$((OUTPUT+$CONNS))
+	done
+
 fi
+
+
+
+
+
 
 
 if test -z "$OUTPUT" ; then
@@ -160,15 +195,15 @@ if test -z "$OUTPUT" ; then
 	EXIT_STATUS=$STATE_WARNING
 else
 	if test "$OUTPUT" -lt "$LEVEL_WARN" ; then
-		RESULT="OK Dovecot $PROTOCOL connections ($OUTPUT) are below the threshold ($LEVEL_WARN/$LEVEL_CRIT)"
+		RESULT="OK Dovecot $PROTO $SHOW_TCP connections ($OUTPUT) are below the threshold ($LEVEL_WARN/$LEVEL_CRIT)"
 		EXIT_STATUS=$STATE_OK
 	else
 		if test "$OUTPUT" -ge "$LEVEL_CRIT" ; then 
-			RESULT="CRITICAL: Dovecot $PROTOCOL connections ($OUTPUT) are over the critical threshold (threshold c = $LEVEL_CRIT)"
+			RESULT="CRITICAL: Dovecot $PROTO $SHOW_TCP connections ($OUTPUT) are over the critical threshold (threshold c = $LEVEL_CRIT)"
 			EXIT_STATUS=$STATE_CRITICAL
 		else
 			if test "$OUTPUT" -ge "$LEVEL_WARN" ; then 
-				RESULT="WARNING: Dovecot $PROTOCOL connections ($OUTPUT) are over the warning threshold (threshold w = $LEVEL_WARN)"
+				RESULT="WARNING: Dovecot $PROTO $SHOW_TCP connections ($OUTPUT) are over the warning threshold (threshold w = $LEVEL_WARN)"
 				EXIT_STATUS=$STATE_WARNING
 			fi
 		fi

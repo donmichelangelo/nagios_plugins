@@ -92,8 +92,8 @@ usage() {
 	echo ""
 	echo "		 -w  Threshold at which a warning status should be triggered"
 	echo "		 -c  Threshold at which a critical status should be triggered"
-        echo "		 -p  Defines the protocol type to look for - valid options: pop3 or imap (this is an optional switch)"
-	echo "		 -t  If this switch is set check_dovecot_connections will calculate the amount of tcp connections per connected user."
+        echo "		 -p  Defines the protocol type to look for - valid options: pop3, imap and sieve (this is an optional switch)"
+	echo "		 -t  If this switch is set check_dovecot_connections will calculate the amount of tcp connections per logged in user."
 	echo "		 -v  Verbose output (ignored for now)"
 	echo "		 -h  Show this page"
 	echo ""
@@ -158,8 +158,8 @@ doopts $@
 
 if [[ $PROTO == "" ]] && [ $CHECK_CONNS = 0 ]
 then
-        PROTO="pop3/imap"
-	OUTPUT=`sudo $DOVEADMBIN -h who | awk ' { print $3 } ' | grep -o "imap\|pop3" | wc -l`
+        PROTO="pop3/imap/sieve"
+	OUTPUT=`sudo $DOVEADMBIN -h who | awk ' { print $3 } ' | grep -o "imap\|pop3\|sieve" | wc -l`
 
 elif [[ $PROTO != "" ]] && [ $CHECK_CONNS = 0 ]
 then
@@ -181,6 +181,7 @@ then
 	do
 		OUTPUT=$((OUTPUT+$CONNS))
 	done
+
 
 fi
 

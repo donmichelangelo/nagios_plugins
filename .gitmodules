@@ -1,0 +1,6 @@
+[submodule "check_amavis"]
+	path = nagios-plugin-check_amavis
+	url = https://github.com/donmichelangelo/nagios-plugin-check_amavis.git
+[submodule "check_mail_delivery"]
+	path = check_mail_delivery
+	url = https://github.com/donmichelangelo/check_mail_delivery.git

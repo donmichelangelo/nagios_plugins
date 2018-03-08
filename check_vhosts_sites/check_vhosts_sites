@@ -1,0 +1,155 @@
+#!/bin/bash
+
+SELF=$(basename "$0")
+VERSION_NUMBER=0.1
+USE_EXCLUDES=0
+IPV=""
+HTTP_SERVICE=""
+CURL_TIMEOUT=""
+
+# Show the help for this script
+function showHelp() {
+cat << EOF
+Usage: $0 [OPTIONS]
+
+  Core:
+  --help              Display this help and exit.
+  --ipv4              Force the check to use IPv4
+  --ipv6              Force the check to use IPv6
+
+  Options:
+  --daemon=apache		The name of the http daemon. Value=apache
+                                and NGINX (value=nginx) are supported.
+  --timeout=<seconds>           Override curl's default timeout
+  --excludes-from=<file>        Don't crawl domains that are listed in the excludes-from file.
+
+EOF
+}
+
+for option in $*; do
+	case "$option" in
+	--help|-h)
+	showHelp
+	exit 0
+	;;
+ esac
+done
+
+
+# Read command line arguments
+for option in $*; do
+  case "$option" in
+    --ipv4)
+      IPV=" --ipv4 "
+      ;;
+    --ipv6)
+      IPV=" --ipv6 "
+      ;;
+    --daemon=*)
+	daem=$(echo $option | cut -d'=' -f2)
+	if [[ $daem =~ "apache|nginx" ]]
+	then
+		echo "$daem is not valid." 
+		showHelp
+		exit 1
+	else
+		HTTP_SERVICE=$daem
+	fi
+      ;;
+	--timeout=*)
+		TIMEOUT=$(echo $option | cut -d'=' -f2)
+		if [[ ! $TIMEOUT =~ [0-9]+$ ]]
+		then
+			echo "Timeout value invalid. Only numbers allowed!"
+			exit 1
+		else
+			CURL_TIMEOUT=" --connect-timeout $TIMEOUT "
+		fi
+	;;
+    --excludes-from=*)
+        excludes=$(echo $option | cut -d'=' -f2)
+	if [[ ! -f $excludes ]]
+        then
+            echo "$excludes is not a file!"
+            showHelp
+            exit 1
+        else
+           USE_EXCLUDES=1
+           EXCLUDES_FROM=$excludes
+        fi
+      ;;
+    *)
+      showHelp
+      ;;
+  esac
+done
+
+
+NAGIOS_PATHS=(/usr/libexec/nagios/plugins /usr/local/nagios/libexec /usr/lib/nagios/plugins /usr/lib64/nagios/plugins)
+
+for NAGIOS_FOLDER in ${NAGIOS_PATHS[@]}
+do
+        if [ -f $NAGIOS_FOLDER/utils.sh ]
+        then
+                . $NAGIOS_FOLDER/utils.sh
+                break
+        fi
+done
+
+
+if [[ $HTTP_SERVICE == "apache" ]]
+then
+
+    for i in $(apachectl -t -D DUMP_VHOSTS | grep "port " | awk ' { print $4 } ')
+	do
+
+        VHOST=$(echo $i)
+        RET_CODE=$(curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+
+        #assemble array
+        ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+
+
+	done
+
+fi
+
+if [[ $HTTP_SERVICE == "nginx" ]]
+then
+
+    for i in $(nginx -T -q | sed -r -e 's/[ \t]*$//' -e 's/^[ \t]*//' -e 's/^#.*$//' -e 's/[ \t]*#.*$//' -e '/^$/d' | egrep ^server_name | awk ' { print $2 } ' | sed -re 's/[_\;]//' | grep -v ";")
+	do
+
+        VHOST=$(echo $i)
+        RET_CODE=$(curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+
+        #assemble array
+        ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+
+
+	done
+
+fi
+
+
+
+unset VHOST
+unset RET_CODE
+
+for A in ${ARRAY[@]}
+do
+        RET_CODE=$(echo $A | cut -d';' -f1 | awk -F, ' { print $2 } ')
+        VHOST=$(echo $A | cut -d';' -f1 | awk -F, ' { print $1 } ')
+
+        if [[ $RET_CODE =~ [5]{1,2} ]]
+        then
+                echo "Site warning: $VHOST : CODE $RET_CODE"
+                EXIT_STATUS=$STATE_WARNING
+
+        fi
+
+done
+
+
+
+

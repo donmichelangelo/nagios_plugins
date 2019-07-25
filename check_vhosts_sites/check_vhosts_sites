@@ -1,16 +1,37 @@
 #!/bin/bash
 
+#(c) Michael Seevogel 2017
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 SELF=$(basename "$0")
-VERSION_NUMBER=0.1
+VERSION_NUMBER=0.2
 USE_EXCLUDES=0
 IPV=""
 HTTP_SERVICE=""
-CURL_TIMEOUT=""
+CURL_TIMEOUT="5"
+EXCLUDE_FILE=vhost_excludes_`hostname -f`
+
+#ToDo:
+# - Add a feature to check the loaded Vhosts against any DNS Server,
+# so that it's possible to verify if the loaded Vhost and DNS answer still points to the same server.
+# - Rework CLI switches
 
 # Show the help for this script
 function showHelp() {
 cat << EOF
-Usage: $0 [OPTIONS]
+Usage: check_vhost_sites [OPTIONS]
 
   Core:
   --help              Display this help and exit.
@@ -47,13 +68,15 @@ for option in $*; do
       ;;
     --daemon=*)
 	daem=$(echo $option | cut -d'=' -f2)
-	if [[ $daem =~ "apache|nginx" ]]
+	if [[ $daem =~ apache|nginx ]] && [ ! -z "$daem" ]
 	then
-		echo "$daem is not valid." 
-		showHelp
-		exit 1
-	else
 		HTTP_SERVICE=$daem
+	elif [[ ! $daem =~ apache|nginx ]] || [ -z "$daem" ]
+	then
+                echo "$daem is not valid or daemon has been not set!" 
+                showHelp
+                exit 1
+
 	fi
       ;;
 	--timeout=*)
@@ -64,6 +87,7 @@ for option in $*; do
 			exit 1
 		else
 			CURL_TIMEOUT=" --connect-timeout $TIMEOUT "
+			TIMEOUT_OVERRIDE=$TIMEOUT
 		fi
 	;;
     --excludes-from=*)
@@ -89,12 +113,25 @@ NAGIOS_PATHS=(/usr/libexec/nagios/plugins /usr/local/nagios/libexec /usr/lib/nag
 
 for NAGIOS_FOLDER in ${NAGIOS_PATHS[@]}
 do
-        if [ -f $NAGIOS_FOLDER/utils.sh ]
+        if [ -f $NAGIOS_FOLDER/utils.sh ] && [ ! -z $NAGIOS_FOLDER/utils.sh ]
         then
                 . $NAGIOS_FOLDER/utils.sh
                 break
         fi
 done
+
+if [ -f /etc/icinga2/$EXCLUDE_FILE ] 
+then
+	source /etc/icinga2/$EXCLUDE_FILE
+
+elif [ -f /etc/nagios/$EXCLUDE_FILE ]
+then
+        source /etc/icinga2/$EXCLUDE_FILE
+
+fi
+
+
+
 
 
 if [[ $HTTP_SERVICE == "apache" ]]
@@ -103,32 +140,63 @@ then
 	for i in $(apachectl -t -D DUMP_VHOSTS 2> /dev/null | grep "port " | awk ' { print $4 } ')
 	do
 
-	        VHOST=$(echo $i)
-	        RET_CODE=$(curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
-	
-	        #assemble array
-	        ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+
+	        VHOST=$i
+		#check if BL_REGEX contains any value
+		if [ -z "$BL_REGEX" ]
+		then
+                RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+                #assemble array
+                ARRAY+=($(echo "$VHOST,$RET_CODE;"))
                 DOM_ARRAY+=($(echo "$VHOST;"))
+		
+		else
+			#Exclude vhosts from the check that are being matched by BL_REGEX	//Note: dots need to be escaped by double backslash
+			if [[ ! $VHOST =~ $BL_REGEX ]]
+			then
+		        RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+	                #assemble array
+	                ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+	                DOM_ARRAY+=($(echo "$VHOST;"))
 
-
+			fi
+		fi
 
 	done
+	
+
+
 
 fi
+
+
 
 if [[ $HTTP_SERVICE == "nginx" ]]
 then
 
-	for i in $(nginx -T -q | sed -r -e 's/[ \t]*$//' -e 's/^[ \t]*//' -e 's/^#.*$//' -e 's/[ \t]*#.*$//' -e '/^$/d' | egrep ^server_name | awk ' { print $2 } ' | sed -re 's/[_\;]//' | grep -v ";")
+	for i in $(nginx -T -q 2> /dev/null | sed -r -e 's/[ \t]*$//' -e 's/^[ \t]*//' -e 's/^#.*$//' -e 's/[ \t]*#.*$//' -e '/^$/d' | egrep ^server_name | awk ' { print $2 } ' | sed -re 's/[_\;]//' | grep -v ";")
 	do
 
-	        VHOST=$(echo $i)
-	        RET_CODE=$(curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+                VHOST=$i
+                #check if BL_REGEX contains any value at all
+                if [ -z "$BL_REGEX" ]
+                then
+                RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+                #assemble array
+                ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+                DOM_ARRAY+=($(echo "$VHOST;"))
 
-	        #assemble array
-	        ARRAY+=($(echo "$VHOST,$RET_CODE;"))
-		DOM_ARRAY+=($(echo "$VHOST;"))
+                else
+                        #Exclude vhosts from the check that are being matched by BL_REGEX       //Note: dots need to be escaped by double backslash
+                        if [[ ! $VHOST =~ $BL_REGEX ]]
+                        then
+                        RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+                        #assemble array
+                        ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+                        DOM_ARRAY+=($(echo "$VHOST;"))
 
+                        fi
+                fi
 
 	done
 
@@ -147,7 +215,10 @@ do
         RET_CODE=$(echo $A | cut -d';' -f1 | awk -F, ' { print $2 } ')
         VHOST=$(echo $A | cut -d';' -f1 | awk -F, ' { print $1 } ')
 
-        if [[ $RET_CODE =~ [5]{1,2} ]]
+	#Return Code 5xx indicates mostly PHP errors like a crashed PHP-FPM daemon/pool, PHP coding errors or wrong htaccess/vhost config statements
+	#Return Code 000 means errors at least on OSI layer 7 (and downwards) like domain does not exist anymore or it's not possible to lookup the domain anymore for whatever reason.
+	#Return Code 400 status code indicates that the server could not understand the request due to invalid syntax (for example underscore in FQDN which also violates RFC).
+        if [[ $RET_CODE =~ [5]{1,2}|000|400 ]]
         then
 		NOTIFICATION_TEST+=($(echo -n "Vhost $VHOST returned HTTP error code $RET_CODE\n"))
 
@@ -155,17 +226,21 @@ do
 
 done
 
-##echo -e "${NOTIFICATION_TEST[@]}" | sed 's/^[ \t]*//'
 
 
 if [ ${#NOTIFICATION_TEST[@]} -eq 0 ]
 then
 	echo "Ok - All Vhosts are reachable"
 	EXIT_STATUS=$STATE_OK
-else
+elif  [ ${#NOTIFICATION_TEST[@]} > 0 ]
+then
 	echo -e "${NOTIFICATION_TEST[@]}" | sed 's/^[ \t]*//'
 	exit 1
 	EXIT_STATUS=$STATE_WARNING
+else
+	echo "Something went wrong. Unknown Plugin state."
+	EXIT_STATUS=$STATE_UNKNOWN
+	exit 2
 fi
 
 

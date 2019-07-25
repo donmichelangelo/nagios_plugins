@@ -100,14 +100,16 @@ done
 if [[ $HTTP_SERVICE == "apache" ]]
 then
 
-    for i in $(apachectl -t -D DUMP_VHOSTS | grep "port " | awk ' { print $4 } ')
+	for i in $(apachectl -t -D DUMP_VHOSTS 2> /dev/null | grep "port " | awk ' { print $4 } ')
 	do
 
-        VHOST=$(echo $i)
-        RET_CODE=$(curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+	        VHOST=$(echo $i)
+	        RET_CODE=$(curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+	
+	        #assemble array
+	        ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+                DOM_ARRAY+=($(echo "$VHOST;"))
 
-        #assemble array
-        ARRAY+=($(echo "$VHOST,$RET_CODE;"))
 
 
 	done
@@ -117,14 +119,15 @@ fi
 if [[ $HTTP_SERVICE == "nginx" ]]
 then
 
-    for i in $(nginx -T -q | sed -r -e 's/[ \t]*$//' -e 's/^[ \t]*//' -e 's/^#.*$//' -e 's/[ \t]*#.*$//' -e '/^$/d' | egrep ^server_name | awk ' { print $2 } ' | sed -re 's/[_\;]//' | grep -v ";")
+	for i in $(nginx -T -q | sed -r -e 's/[ \t]*$//' -e 's/^[ \t]*//' -e 's/^#.*$//' -e 's/[ \t]*#.*$//' -e '/^$/d' | egrep ^server_name | awk ' { print $2 } ' | sed -re 's/[_\;]//' | grep -v ";")
 	do
 
-        VHOST=$(echo $i)
-        RET_CODE=$(curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+	        VHOST=$(echo $i)
+	        RET_CODE=$(curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
 
-        #assemble array
-        ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+	        #assemble array
+	        ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+		DOM_ARRAY+=($(echo "$VHOST;"))
 
 
 	done
@@ -136,20 +139,33 @@ fi
 unset VHOST
 unset RET_CODE
 
+
+
 for A in ${ARRAY[@]}
 do
+
         RET_CODE=$(echo $A | cut -d';' -f1 | awk -F, ' { print $2 } ')
         VHOST=$(echo $A | cut -d';' -f1 | awk -F, ' { print $1 } ')
 
         if [[ $RET_CODE =~ [5]{1,2} ]]
         then
-                echo "Site warning: $VHOST : CODE $RET_CODE"
-                EXIT_STATUS=$STATE_WARNING
+		NOTIFICATION_TEST+=($(echo -n "Vhost $VHOST returned HTTP error code $RET_CODE\n"))
 
         fi
 
 done
 
+##echo -e "${NOTIFICATION_TEST[@]}" | sed 's/^[ \t]*//'
 
+
+if [ ${#NOTIFICATION_TEST[@]} -eq 0 ]
+then
+	echo "Ok - All Vhosts are reachable"
+	EXIT_STATUS=$STATE_OK
+else
+	echo -e "${NOTIFICATION_TEST[@]}" | sed 's/^[ \t]*//'
+	exit 1
+	EXIT_STATUS=$STATE_WARNING
+fi
 
 

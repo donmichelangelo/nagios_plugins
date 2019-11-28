@@ -145,19 +145,19 @@ then
 		#check if BL_REGEX contains any value
 		if [ -z "$BL_REGEX" ]
 		then
-                RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
-                #assemble array
-                ARRAY+=($(echo "$VHOST,$RET_CODE;"))
-                DOM_ARRAY+=($(echo "$VHOST;"))
+	                RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl -L --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+	                #assemble array
+	                ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+	                DOM_ARRAY+=($(echo "$VHOST;"))
 		
 		else
 			#Exclude vhosts from the check that are being matched by BL_REGEX	//Note: dots need to be escaped by double backslash
 			if [[ ! $VHOST =~ $BL_REGEX ]]
 			then
-		        RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
-	                #assemble array
-	                ARRAY+=($(echo "$VHOST,$RET_CODE;"))
-	                DOM_ARRAY+=($(echo "$VHOST;"))
+			        RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl -L --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+		                #assemble array
+		                ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+		                DOM_ARRAY+=($(echo "$VHOST;"))
 
 			fi
 		fi
@@ -181,19 +181,19 @@ then
                 #check if BL_REGEX contains any value at all
                 if [ -z "$BL_REGEX" ]
                 then
-                RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
-                #assemble array
-                ARRAY+=($(echo "$VHOST,$RET_CODE;"))
-                DOM_ARRAY+=($(echo "$VHOST;"))
+	                RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl -L --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+	                #assemble array
+	                ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+	                DOM_ARRAY+=($(echo "$VHOST;"))
 
                 else
                         #Exclude vhosts from the check that are being matched by BL_REGEX       //Note: dots need to be escaped by double backslash
                         if [[ ! $VHOST =~ $BL_REGEX ]]
                         then
-                        RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
-                        #assemble array
-                        ARRAY+=($(echo "$VHOST,$RET_CODE;"))
-                        DOM_ARRAY+=($(echo "$VHOST;"))
+	                        RET_CODE=$(timeout $TIMEOUT_OVERRIDE"s" curl -L --insecure $IPV $CURL_TIMEOUT -A "Mozilla/5.0 (Icinga PluginCheck; check_vhosts_sites; Site availibity check; en; rv:$VERSION_NUMBER) Gecko/20100101" -s -o /dev/null -w "%{http_code}" http://$i)
+        	                #assemble array
+	                        ARRAY+=($(echo "$VHOST,$RET_CODE;"))
+	                        DOM_ARRAY+=($(echo "$VHOST;"))
 
                         fi
                 fi
